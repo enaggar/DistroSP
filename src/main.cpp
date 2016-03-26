@@ -184,13 +184,21 @@ void *remove_edge (void *input) {
 
 					pthread_t pt;
 					pthread_mutex_lock (&index_mutex);
+					fprintf (log_file, "Attampting to start thread recompute ssp for triplet: (%d,%d,%d)\n", x, y, ind);
 					int rc = pthread_create(&pt, NULL, ssp, (void*)&ind);
 					while (rc) {
-						fprintf (log_file, "Unable to start thread recompute ssp for triplet: (%d,%d,%d)\n", x, y, ind);
+						fprintf (log_file, "Unable to start thread recompute ssp for triplet: (%d,%d,%d), error = %d\n", x, y, ind, rc);
 						rc = pthread_create(&pt, NULL, ssp, (void*)&ind);
 					}
+					fprintf (log_file, "Successfuly started thread recompute ssp for triplet: (%d,%d,%d)\n", x, y, ind);
 					void *status;
+					fprintf (log_file, "Attampting to join thread recompute ssp for triplet: (%d,%d,%d)\n", x, y, ind);
 					int st = pthread_join(pt, &status);
+					while (st) {
+						fprintf (log_file, "Unable to join thread recompute ssp for triplet: (%d,%d,%d), error = %d\n", x, y, ind, st);
+						st = pthread_join(pt, &status);
+					}
+					fprintf (log_file, "Successfuly joined thread recompute ssp for triplet: (%d,%d,%d)\n", x, y, ind);
 					pthread_exit(NULL);
 				}
 			}
@@ -221,10 +229,12 @@ int main () {
 		int ind = it->second;
 		//printf ("Initializing for node: %d\n", ind);
 		int st = pthread_create (&pt, NULL, ssp, (void*)&ind);
+		fprintf (log_file, "Attempting to start init thread for node: %d\n", ind);
 		while (st) {
-			fprintf (log_file, "Unable to start thread for node: %d\n", ind);
+			fprintf (log_file, "Unable to start init thread for node: %d, error = %d\n", ind, st);
 			int st = pthread_create (&pt, NULL, ssp, (void*)&ind);
 		}
+		fprintf (log_file, "Successfuly started init thread for node: %d\n", ind);
 		//printf ("Thead run for node: %d\n", ind);
 		child_threads.push_back(pt);
 	}
@@ -233,7 +243,13 @@ int main () {
 
 	for (int i=0;i<child_threads.size();i++) {
 		void *status;
+		fprintf (log_file, "Attempting to join init thread for node: %d\n", i);
 		int st = pthread_join (child_threads[i], &status);
+		while (st) {
+			fprintf (log_file, "Unable to join init thread for node: %d, error = %d\n", i, st);
+			st = pthread_join (child_threads[i], &status);
+		}
+		fprintf (log_file, "Successfuly started init thread for node: %d\n", i);
 	}
 
 	printf ("R\n");
@@ -264,10 +280,12 @@ int main () {
 			pii p = pii (node_map[x], node_map[y]);
 			pthread_t pt;
 			int rc = pthread_create (&pt, NULL, query, (void*)&p);
+			fprintf (log_file, "Attempting to start thread for query: (%d,%d)\n", node_map[x], node_map[y]);
 			while (rc) {
-				fprintf (log_file, "Unable to start thread for query: (%d,%d)\n", node_map[x], node_map[y]);
+				fprintf (log_file, "Unable to start thread for query: (%d,%d), error = %d\n", node_map[x], node_map[y], rc);
 				rc = pthread_create (&pt, NULL, query, (void*)&p);
 			}
+			fprintf (log_file, "Successfuly started thread for query: (%d,%d)\n", node_map[x], node_map[y]);
 		} else if (command == 'A') {
 			lock_for_write ();
 			if (edges[node_map[x]].find(node_map[y]) == edges[node_map[x]].end()) {
@@ -278,14 +296,22 @@ int main () {
 					triplet t = triplet (node_map[x], node_map[y], it->second);
 					pthread_t pt;
 					int rc = pthread_create (&pt, NULL, add_edge, (void*)&t);
+					fprintf (log_file, "Attempting to start thread for add edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], it->second);
 					while (rc) {
-						fprintf (log_file, "Unable to start thread for add edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], it->second);
+						fprintf (log_file, "Unable to start thread for add edge triplet: (%d,%d,%d), error = %d\n", node_map[x], node_map[y], it->second, rc);
 						rc = pthread_create (&pt, NULL, add_edge, (void*)&t);
 					}
+					fprintf (log_file, "Successfuly started thread for add edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], it->second);
 					child_threads.push_back(pt);
 					for (int i=0;i<child_threads.size();i++) {
 						void* status;
+						fprintf (log_file, "Attempting to join thread for add edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], it->second);
 						int st = pthread_join(child_threads[i], &status);
+						while (st) {
+							fprintf (log_file, "Unable to join thread for add edge triplet: (%d,%d,%d), error = %d\n", node_map[x], node_map[y], it->second, st);
+							st = pthread_join(child_threads[i], &status);
+						}
+						fprintf (log_file, "Successfuly joined thread for add edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], it->second);
 					}
 				}
 			}
@@ -300,14 +326,22 @@ int main () {
 					triplet t = triplet(node_map[x], node_map[y], it->second);
 					pthread_t pt;
 					int rc = pthread_create(&pt, NULL, remove_edge, (void*)&t);
+					fprintf (log_file, "Attempting to start thread for remove edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], it->second);
 					while (rc) {
-						fprintf (log_file, "Unable to start thread for remove edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], it->second);
+						fprintf (log_file, "Unable to start thread for remove edge triplet: (%d,%d,%d), error = %d\n", node_map[x], node_map[y], it->second, rc);
 						rc = pthread_create(&pt, NULL, remove_edge, (void*)&t);
 					}
+					fprintf (log_file, "Successfuly started thread for remove edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], it->second);
 					child_threads.push_back(pt);
 					for (int i=0;i<child_threads.size();i++) {
 						void* status;
+						fprintf (log_file, "Attempting to join thread for remove edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], it->second);
 						int st = pthread_join(child_threads[i], &status);
+						while (st) {
+							fprintf (log_file, "Unable to join thread for remove edge triplet: (%d,%d,%d), error = %d\n", node_map[x], node_map[y], it->second, st);
+							int st = pthread_join(child_threads[i], &status);
+						}
+						fprintf (log_file, "Successfuly joined thread for remove edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], it->second);
 					}
 				}
 			}
@@ -318,6 +352,8 @@ int main () {
 			printf ("INVALID COMMAND\n");
 		}
 	}
+
+	fclose (log_file);
 
 	return 0;
 }
