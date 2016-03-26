@@ -1,0 +1,40 @@
+Attempting to start thread below max threshold
+Successfuly started thread
+Attempting to start thread on max threshold
+Successfuly started thread
+Attempting to start thread below max threshold
+Successfuly started thread
+Attempting to start thread below max threshold
+Successfuly started thread
+Attempting to start thread below max threshold
+Successfuly started thread
+Attempting to start thread below max threshold
+Successfuly started thread
+Attempting to start thread below max threshold
+Successfuly started thread
+Attempting to start thread below max threshold
+Successfuly started thread
+Attampting to join thread recompute ssp for triplet: (1,2,3)
+Attempting to start thread on max threshold
+Successfuly started thread
+Attempting to start thread below max threshold
+Successfuly joined thread recompute ssp for triplet: (1,2,3)
+Successfuly started thread
+Attempting to join thread for remove edge triplet: (1,2,0)
+Attempting to start thread below max threshold
+Successfuly started thread
+Attampting to join thread recompute ssp for triplet: (1,2,1)
+Successfuly joined thread for remove edge triplet: (1,2,0)
+Attempting to join thread for remove edge triplet: (1,2,1)
+Attempting to start thread on max threshold
+Successfuly joined thread for remove edge triplet: (1,2,1)
+Attempting to join thread for remove edge triplet: (1,2,2)
+Successfuly started thread
+Attampting to join thread recompute ssp for triplet: (1,2,0)
+Successfuly joined thread recompute ssp for triplet: (1,2,1)
+Successfuly joined thread recompute ssp for triplet: (1,2,0)
+Successfuly joined thread for remove edge triplet: (1,2,2)
+Attempting to join thread for remove edge triplet: (1,2,3)
+Successfuly joined thread for remove edge triplet: (1,2,3)
+Attempting to start thread below max threshold
+Successfuly started thread

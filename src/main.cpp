@@ -36,7 +36,11 @@ public:
 	}
 };
 
-pthread_mutex_t read_mutex, write_mutex, index_mutex, cost_mutex;
+pthread_mutex_t read_mutex, write_mutex, index_mutex, cost_mutex, count_mutex;
+pthread_cond_t count_max;
+pthread_attr_t pt_attr;
+int thread_count;
+int thread_max;
 int read_count;
 FILE* log_file;
 
@@ -88,6 +92,12 @@ void *query(void *input) {
 		pthread_mutex_unlock(&write_mutex);
 	}
 	pthread_mutex_unlock(&read_mutex);
+	pthread_mutex_lock (&count_mutex);
+	if (thread_count == thread_max) {
+		pthread_cond_signal(&count_max);
+	}
+	thread_count--;
+	pthread_mutex_unlock (&count_mutex);
 	pthread_exit(NULL);
 }
 
@@ -122,7 +132,62 @@ void *ssp (void *input) {
 			}
 		}
 	}
+	pthread_mutex_lock (&count_mutex);
+	if (thread_count == thread_max) {
+		pthread_cond_signal(&count_max);
+	}
+	thread_count--;
+	pthread_mutex_unlock (&count_mutex);
 	pthread_exit(NULL);
+}
+
+pthread_t* new_thread (const pthread_attr_t *attr, void *(*start_routine) (void*), void *arg) {
+	pthread_t *thread = (pthread_t*)malloc(sizeof(pthread_t));
+	//cout << "Open new thread\n";
+	//if (start_routine == ssp) {
+	//	printf ("SSP called from remove\n");
+	//}
+	//cout << "Prelock\n";
+	pthread_mutex_lock (&count_mutex);
+	//cout << "After Lock\n";
+	//sleep (3);
+	//cout << "wait over\n";
+	if (thread_count == thread_max) {
+		fprintf (log_file, "Attempting to start thread on max threshold\n");
+		//cout << "Attempting to start thread for on max threshold\n";
+		//cout << "al3ab baleeh\n";
+		int st = pthread_create (thread, attr, start_routine, arg);
+		if (!st) {
+			thread_max ++;
+		}
+		while (st) {
+			fprintf (log_file, "Failed to push max threshold to start thread, error = %d\n", st);
+			//printf ("Failed to push max threshold to start thread, error = %d\n", st);
+			pthread_cond_wait(&count_max, &count_mutex);
+			st = pthread_create (thread, attr, start_routine, arg);
+		}
+		thread_count ++;
+		fprintf (log_file, "Successfuly started thread\n");
+	} else {
+		fprintf (log_file, "Attempting to start thread below max threshold\n");
+		//cout << "Attempting to start thread below max threshold\n";
+		int st = pthread_create (thread, attr, start_routine, arg);
+		//cout << st << endl;
+		while (st) {
+			thread_max = thread_count;
+			fprintf (log_file, "Unable to start thread for although below threshold, error = %d\n", st);
+			//printf ("Unable to start thread for although below threshold, error = %d\n", st);
+			pthread_cond_wait(&count_max, &count_mutex);
+			st = pthread_create (thread, attr, start_routine, arg);
+		}
+		thread_count ++;
+		fprintf (log_file, "Successfuly started thread\n");
+		//printf ("Successfuly started thread\n");
+	}
+	pthread_mutex_unlock (&count_mutex);
+	//cout << "Success\n";
+	//printf ("%p\n", thread);
+	return thread;
 }
 
 void lock_for_write (){ 
@@ -159,6 +224,12 @@ void *add_edge (void *input) {
 			}
 		}
 	}
+	pthread_mutex_lock (&count_mutex);
+	if (thread_count == thread_max) {
+		pthread_cond_signal(&count_max);
+	}
+	thread_count--;
+	pthread_mutex_unlock (&count_mutex);
 	pthread_exit(NULL);
 }
 
@@ -182,40 +253,48 @@ void *remove_edge (void *input) {
 					pthread_attr_init(&pt_attr);
 					pthread_attr_setdetachstate(&pt_attr, PTHREAD_CREATE_JOINABLE);
 
-					pthread_t pt;
 					pthread_mutex_lock (&index_mutex);
-					fprintf (log_file, "Attampting to start thread recompute ssp for triplet: (%d,%d,%d)\n", x, y, ind);
-					int rc = pthread_create(&pt, NULL, ssp, (void*)&ind);
-					while (rc) {
-						fprintf (log_file, "Unable to start thread recompute ssp for triplet: (%d,%d,%d), error = %d\n", x, y, ind, rc);
-						rc = pthread_create(&pt, NULL, ssp, (void*)&ind);
-					}
-					fprintf (log_file, "Successfuly started thread recompute ssp for triplet: (%d,%d,%d)\n", x, y, ind);
+					pthread_t *pt = new_thread (&pt_attr, ssp, (void*)&ind);
 					void *status;
 					fprintf (log_file, "Attampting to join thread recompute ssp for triplet: (%d,%d,%d)\n", x, y, ind);
-					int st = pthread_join(pt, &status);
+					int st = pthread_join(*pt, &status);
 					while (st) {
 						fprintf (log_file, "Unable to join thread recompute ssp for triplet: (%d,%d,%d), error = %d\n", x, y, ind, st);
-						st = pthread_join(pt, &status);
+						st = pthread_join(*pt, &status);
 					}
+					//printf ("%p\n", pt);
+					free (pt);
 					fprintf (log_file, "Successfuly joined thread recompute ssp for triplet: (%d,%d,%d)\n", x, y, ind);
-					pthread_exit(NULL);
+					goto a;
 				}
 			}
 		}
 	}
+	a:
+	//printf ("Effect checked\n");
+	pthread_mutex_lock (&count_mutex);
+	if (thread_count == thread_max) {
+		//printf ("Attempting to send signal\n");
+		pthread_cond_signal(&count_max);
+		//printf ("Signal sent\n");
+	}
+	thread_count--;
+	//printf ("Count decremented\n");
+	pthread_mutex_unlock (&count_mutex);
+	//printf ("Ready to exit %d\n", ind);
 	pthread_exit(NULL);
 }
 
 int main () {
+
+	thread_max = 1;
 
 	log_file = fopen ("process.log", "w");
 
 	read_input();
 	unordered_map <unsigned int, int> :: iterator it;
 
-	vector <pthread_t> child_threads;
-	pthread_attr_t pt_attr;
+	vector <pthread_t*> child_threads;
 	pthread_attr_init(&pt_attr);
 	pthread_attr_setdetachstate(&pt_attr, PTHREAD_CREATE_JOINABLE);
 
@@ -223,34 +302,28 @@ int main () {
 	pthread_mutex_init (&write_mutex,NULL);
 	pthread_mutex_init (&index_mutex,NULL);
 	pthread_mutex_init (&cost_mutex, NULL);
+	pthread_mutex_init (&count_mutex,NULL);
+	pthread_cond_init  (&count_max,  NULL);
 	for (it = node_map.begin(); it != node_map.end(); it++) {
-		pthread_t pt;
 		int ret = pthread_mutex_lock (&index_mutex);
 		int ind = it->second;
 		//printf ("Initializing for node: %d\n", ind);
-		int st = pthread_create (&pt, NULL, ssp, (void*)&ind);
-		fprintf (log_file, "Attempting to start init thread for node: %d\n", ind);
-		while (st) {
-			fprintf (log_file, "Unable to start init thread for node: %d, error = %d\n", ind, st);
-			int st = pthread_create (&pt, NULL, ssp, (void*)&ind);
-		}
-		fprintf (log_file, "Successfuly started init thread for node: %d\n", ind);
+		pthread_t *pt = new_thread (&pt_attr, ssp, &ind);
 		//printf ("Thead run for node: %d\n", ind);
 		child_threads.push_back(pt);
 	}
 
-	pthread_attr_destroy(&pt_attr);
-
-	for (int i=0;i<child_threads.size();i++) {
+	/*for (int i=0;i<child_threads.size();i++) {
 		void *status;
 		fprintf (log_file, "Attempting to join init thread for node: %d\n", i);
-		int st = pthread_join (child_threads[i], &status);
+		int st = pthread_join (*child_threads[i], &status);
 		while (st) {
 			fprintf (log_file, "Unable to join init thread for node: %d, error = %d\n", i, st);
-			st = pthread_join (child_threads[i], &status);
+			st = pthread_join (*child_threads[i], &status);
 		}
+		free (child_threads[i]);
 		fprintf (log_file, "Successfuly started init thread for node: %d\n", i);
-	}
+	}*/
 
 	printf ("R\n");
 
@@ -278,14 +351,7 @@ int main () {
 			pthread_mutex_unlock(&read_mutex);
 			pthread_mutex_lock(&index_mutex);
 			pii p = pii (node_map[x], node_map[y]);
-			pthread_t pt;
-			int rc = pthread_create (&pt, NULL, query, (void*)&p);
-			fprintf (log_file, "Attempting to start thread for query: (%d,%d)\n", node_map[x], node_map[y]);
-			while (rc) {
-				fprintf (log_file, "Unable to start thread for query: (%d,%d), error = %d\n", node_map[x], node_map[y], rc);
-				rc = pthread_create (&pt, NULL, query, (void*)&p);
-			}
-			fprintf (log_file, "Successfuly started thread for query: (%d,%d)\n", node_map[x], node_map[y]);
+			pthread_t *pt = new_thread (&pt_attr, query, (void*)&p);
 		} else if (command == 'A') {
 			lock_for_write ();
 			if (edges[node_map[x]].find(node_map[y]) == edges[node_map[x]].end()) {
@@ -294,25 +360,19 @@ int main () {
 				for (it = node_map.begin(); it != node_map.end(); it++) {
 					pthread_mutex_lock (&index_mutex);
 					triplet t = triplet (node_map[x], node_map[y], it->second);
-					pthread_t pt;
-					int rc = pthread_create (&pt, NULL, add_edge, (void*)&t);
-					fprintf (log_file, "Attempting to start thread for add edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], it->second);
-					while (rc) {
-						fprintf (log_file, "Unable to start thread for add edge triplet: (%d,%d,%d), error = %d\n", node_map[x], node_map[y], it->second, rc);
-						rc = pthread_create (&pt, NULL, add_edge, (void*)&t);
-					}
-					fprintf (log_file, "Successfuly started thread for add edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], it->second);
+					pthread_t* pt = new_thread (&pt_attr, add_edge, (void*)&t);
 					child_threads.push_back(pt);
-					for (int i=0;i<child_threads.size();i++) {
-						void* status;
-						fprintf (log_file, "Attempting to join thread for add edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], it->second);
-						int st = pthread_join(child_threads[i], &status);
-						while (st) {
-							fprintf (log_file, "Unable to join thread for add edge triplet: (%d,%d,%d), error = %d\n", node_map[x], node_map[y], it->second, st);
-							st = pthread_join(child_threads[i], &status);
-						}
-						fprintf (log_file, "Successfuly joined thread for add edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], it->second);
+				}
+				for (int i=0;i<child_threads.size();i++) {
+					void* status;
+					fprintf (log_file, "Attempting to join thread for add edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], i);
+					int st = pthread_join(*child_threads[i], &status);
+					while (st) {
+						fprintf (log_file, "Unable to join thread for add edge triplet: (%d,%d,%d), error = %d\n", node_map[x], node_map[y], i, st);
+						st = pthread_join(*child_threads[i], &status);
 					}
+					free(child_threads[i]);
+					fprintf (log_file, "Successfuly joined thread for add edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], i);
 				}
 			}
 			unlock_write();
@@ -324,25 +384,19 @@ int main () {
 				for (it = node_map.begin(); it != node_map.end(); it++) {
 					pthread_mutex_lock(&index_mutex);
 					triplet t = triplet(node_map[x], node_map[y], it->second);
-					pthread_t pt;
-					int rc = pthread_create(&pt, NULL, remove_edge, (void*)&t);
-					fprintf (log_file, "Attempting to start thread for remove edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], it->second);
-					while (rc) {
-						fprintf (log_file, "Unable to start thread for remove edge triplet: (%d,%d,%d), error = %d\n", node_map[x], node_map[y], it->second, rc);
-						rc = pthread_create(&pt, NULL, remove_edge, (void*)&t);
-					}
-					fprintf (log_file, "Successfuly started thread for remove edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], it->second);
+					pthread_t *pt = new_thread (&pt_attr, remove_edge, (void*)&t);
 					child_threads.push_back(pt);
-					for (int i=0;i<child_threads.size();i++) {
-						void* status;
-						fprintf (log_file, "Attempting to join thread for remove edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], it->second);
-						int st = pthread_join(child_threads[i], &status);
-						while (st) {
-							fprintf (log_file, "Unable to join thread for remove edge triplet: (%d,%d,%d), error = %d\n", node_map[x], node_map[y], it->second, st);
-							int st = pthread_join(child_threads[i], &status);
-						}
-						fprintf (log_file, "Successfuly joined thread for remove edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], it->second);
+				}
+				for (int i=0;i<child_threads.size();i++) {
+					void* status;
+					fprintf (log_file, "Attempting to join thread for remove edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], i);
+					int st = pthread_join(*child_threads[i], &status);
+					while (st) {
+						fprintf (log_file, "Unable to join thread for remove edge triplet: (%d,%d,%d), error = %d\n", node_map[x], node_map[y], i, st);
+						int st = pthread_join(*child_threads[i], &status);
 					}
+					free (child_threads[i]);
+					fprintf (log_file, "Successfuly joined thread for remove edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], i);
 				}
 			}
 			unlock_write ();
@@ -353,6 +407,7 @@ int main () {
 		}
 	}
 
+	pthread_attr_destroy(&pt_attr);
 	fclose (log_file);
 
 	return 0;
