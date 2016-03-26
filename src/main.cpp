@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <queue>
 #include <map>
+#include <unordered_map>
+#include <unordered_set>
 using namespace std;
 
 typedef pair<int,int> pii;
@@ -36,19 +38,20 @@ public:
 
 pthread_mutex_t read_mutex, write_mutex, index_mutex, cost_mutex;
 int read_count;
+FILE* log_file;
 
-vector <set <int> > edges;
-map <unsigned int, int> node_map;
-vector <map <int, int> > cost_map;
+vector <unordered_set <int> > edges;
+unordered_map <unsigned int, int> node_map;
+vector <unordered_map <int, int> > cost_map;
 
 void new_node (int x) {
 	int s = node_map.size();
 	node_map[x] = s;
-	set <int> new_set;
+	unordered_set <int> new_set;
 	edges.push_back(new_set);
 	//pthread_mutex_t mutex;
 	//cost_mutex.push_back(mutex);
-	map <int, int> cost;
+	unordered_map <int, int> cost;
 	cost[s] = 0;
 	cost_map.push_back(cost);
 }
@@ -96,13 +99,13 @@ void *ssp (void *input) {
     //printf ("Computing SSP for %d\n", src);
     
 	queue <int> q;
-	set <int> vis;
+	unordered_set <int> vis;
 	q.push(src);
 	vis.insert(src);
-    cost_map[src].clear();
+	cost_map[src].clear();
 	cost_map[src][src] = 0;
 
-	set <int> :: iterator it;
+	unordered_set <int> :: iterator it;
 
 	while (!q.empty()) {
 		int c = q.front();
@@ -144,7 +147,7 @@ void *add_edge (void *input) {
 	x = t->first, y = t->second, ind = t->third;
 	pthread_mutex_unlock(&index_mutex);
 
-	map <unsigned int, int> :: iterator it;
+	unordered_map <unsigned int, int> :: iterator it;
 
 	if (cost_map[ind].find(x) != cost_map[ind].end()) {
 		for (it = node_map.begin(); it != node_map.end(); it++) {
@@ -167,7 +170,7 @@ void *remove_edge (void *input) {
 
     //printf ("Removing edge (%d, %d) effect for %d\n", x, y, ind);
     
-	map <unsigned int, int> :: iterator it;
+	unordered_map <unsigned int, int> :: iterator it;
 
 	for (it = node_map.begin(); it != node_map.end(); it++) {
 		int ind2 = it->second;
@@ -183,6 +186,7 @@ void *remove_edge (void *input) {
 					pthread_mutex_lock (&index_mutex);
 					int rc = pthread_create(&pt, NULL, ssp, (void*)&ind);
 					while (rc) {
+						fprintf (log_file, "Unable to start thread recompute ssp for triplet: (%d,%d,%d)\n", x, y, ind);
 						rc = pthread_create(&pt, NULL, ssp, (void*)&ind);
 					}
 					void *status;
@@ -197,8 +201,10 @@ void *remove_edge (void *input) {
 
 int main () {
 
+	log_file = fopen ("process.log", "w");
+
 	read_input();
-	map <unsigned int, int> :: iterator it;
+	unordered_map <unsigned int, int> :: iterator it;
 
 	vector <pthread_t> child_threads;
 	pthread_attr_t pt_attr;
@@ -216,7 +222,7 @@ int main () {
 		//printf ("Initializing for node: %d\n", ind);
 		int st = pthread_create (&pt, NULL, ssp, (void*)&ind);
 		while (st) {
-			//printf ("Unable to start thread for node: %d\n", ind);
+			fprintf (log_file, "Unable to start thread for node: %d\n", ind);
 			int st = pthread_create (&pt, NULL, ssp, (void*)&ind);
 		}
 		//printf ("Thead run for node: %d\n", ind);
@@ -258,6 +264,10 @@ int main () {
 			pii p = pii (node_map[x], node_map[y]);
 			pthread_t pt;
 			int rc = pthread_create (&pt, NULL, query, (void*)&p);
+			while (rc) {
+				fprintf (log_file, "Unable to start thread for query: (%d,%d)\n", node_map[x], node_map[y]);
+				rc = pthread_create (&pt, NULL, query, (void*)&p);
+			}
 		} else if (command == 'A') {
 			lock_for_write ();
 			if (edges[node_map[x]].find(node_map[y]) == edges[node_map[x]].end()) {
@@ -268,6 +278,10 @@ int main () {
 					triplet t = triplet (node_map[x], node_map[y], it->second);
 					pthread_t pt;
 					int rc = pthread_create (&pt, NULL, add_edge, (void*)&t);
+					while (rc) {
+						fprintf (log_file, "Unable to start thread for add edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], it->second);
+						rc = pthread_create (&pt, NULL, add_edge, (void*)&t);
+					}
 					child_threads.push_back(pt);
 					for (int i=0;i<child_threads.size();i++) {
 						void* status;
@@ -286,11 +300,15 @@ int main () {
 					triplet t = triplet(node_map[x], node_map[y], it->second);
 					pthread_t pt;
 					int rc = pthread_create(&pt, NULL, remove_edge, (void*)&t);
+					while (rc) {
+						fprintf (log_file, "Unable to start thread for remove edge triplet: (%d,%d,%d)\n", node_map[x], node_map[y], it->second);
+						rc = pthread_create(&pt, NULL, remove_edge, (void*)&t);
+					}
 					child_threads.push_back(pt);
 					for (int i=0;i<child_threads.size();i++) {
 						void* status;
 						int st = pthread_join(child_threads[i], &status);
-					}	
+					}
 				}
 			}
 			unlock_write ();
