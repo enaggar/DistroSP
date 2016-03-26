@@ -93,10 +93,13 @@ void *ssp (void *input) {
 	//printf ("Inside %d\n", src);
 	pthread_mutex_unlock(&index_mutex);
 
+    //printf ("Computing SSP for %d\n", src);
+    
 	queue <int> q;
 	set <int> vis;
 	q.push(src);
 	vis.insert(src);
+    cost_map[src].clear();
 	cost_map[src][src] = 0;
 
 	set <int> :: iterator it;
@@ -162,6 +165,8 @@ void *remove_edge (void *input) {
 	x = t->first, y = t->second, ind = t->third;
 	pthread_mutex_unlock(&index_mutex);
 
+    //printf ("Removing edge (%d, %d) effect for %d\n", x, y, ind);
+    
 	map <unsigned int, int> :: iterator it;
 
 	for (it = node_map.begin(); it != node_map.end(); it++) {
@@ -169,7 +174,7 @@ void *remove_edge (void *input) {
 		if (cost_map[ind].find(ind2) != cost_map[ind].end()) {
 			if (cost_map[ind].find(x)  != cost_map[ind].end() &&
 					cost_map[y].find(ind2) != cost_map[y].end()) {
-				if (cost_map[ind][ind2] == cost_map[ind][x] + cost_map[y][ind] + 1) {
+				if (cost_map[ind][ind2] == cost_map[ind][x] + cost_map[y][ind2] + 1) {
 					pthread_attr_t pt_attr;
 					pthread_attr_init(&pt_attr);
 					pthread_attr_setdetachstate(&pt_attr, PTHREAD_CREATE_JOINABLE);
