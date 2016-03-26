@@ -90,7 +90,7 @@ void *query(void *input) {
 
 void *ssp (void *input) {
 	int src = *((int*)input);
-	printf ("Inside %d\n", src);
+	//printf ("Inside %d\n", src);
 	pthread_mutex_unlock(&index_mutex);
 
 	queue <int> q;
@@ -105,7 +105,7 @@ void *ssp (void *input) {
 		int c = q.front();
 		q.pop();
 
-		printf ("%d %d\n", src, c);
+		//printf ("%d %d\n", src, c);
 
 		for (it = edges[c].begin(); it != edges[c].end(); it++) {
 			int nxt = *it;
@@ -156,6 +156,40 @@ void *add_edge (void *input) {
 	pthread_exit(NULL);
 }
 
+void *remove_edge (void *input) {
+	triplet *t = (triplet*) input;
+	int x, y, ind;
+	x = t->first, y = t->second, ind = t->third;
+	pthread_mutex_unlock(&index_mutex);
+
+	map <unsigned int, int> :: iterator it;
+
+	for (it = node_map.begin(); it != node_map.end(); it++) {
+		int ind2 = it->second;
+		if (cost_map[ind].find(ind2) != cost_map[ind].end()) {
+			if (cost_map[ind].find(x)  != cost_map[ind].end() &&
+					cost_map[y].find(ind2) != cost_map[y].end()) {
+				if (cost_map[ind][ind2] == cost_map[ind][x] + cost_map[y][ind] + 1) {
+					pthread_attr_t pt_attr;
+					pthread_attr_init(&pt_attr);
+					pthread_attr_setdetachstate(&pt_attr, PTHREAD_CREATE_JOINABLE);
+
+					pthread_t pt;
+					pthread_mutex_lock (&index_mutex);
+					int rc = pthread_create(&pt, NULL, ssp, (void*)&ind);
+					while (rc) {
+						rc = pthread_create(&pt, NULL, ssp, (void*)&ind);
+					}
+					void *status;
+					int st = pthread_join(pt, &status);
+					pthread_exit(NULL);
+				}
+			}
+		}
+	}
+	pthread_exit(NULL);
+}
+
 int main () {
 
 	read_input();
@@ -174,13 +208,13 @@ int main () {
 		pthread_t pt;
 		int ret = pthread_mutex_lock (&index_mutex);
 		int ind = it->second;
-		printf ("Initializing for node: %d\n", ind);
+		//printf ("Initializing for node: %d\n", ind);
 		int st = pthread_create (&pt, NULL, ssp, (void*)&ind);
 		while (st) {
-			printf ("Unable to start thread for node: %d\n", ind);
+			//printf ("Unable to start thread for node: %d\n", ind);
 			int st = pthread_create (&pt, NULL, ssp, (void*)&ind);
 		}
-		printf ("Thead run for node: %d\n", ind);
+		//printf ("Thead run for node: %d\n", ind);
 		child_threads.push_back(pt);
 	}
 
@@ -190,6 +224,8 @@ int main () {
 		void *status;
 		int st = pthread_join (child_threads[i], &status);
 	}
+
+	printf ("R\n");
 
 	char line[100];
 
@@ -228,15 +264,30 @@ int main () {
 					pthread_t pt;
 					int rc = pthread_create (&pt, NULL, add_edge, (void*)&t);
 					child_threads.push_back(pt);
-				}
-				for (int i=0;i<child_threads.size();i++) {
-					void* status;
-					int st = pthread_join(child_threads[i], &status);
+					for (int i=0;i<child_threads.size();i++) {
+						void* status;
+						int st = pthread_join(child_threads[i], &status);
+					}
 				}
 			}
 			unlock_write();
 		} else if (command == 'D') {
 			lock_for_write ();
+			if (edges[node_map[x]].find(node_map[y]) != edges[node_map[x]].end()) {
+				edges[node_map[x]].erase(node_map[y]);
+				child_threads.clear();
+				for (it = node_map.begin(); it != node_map.end(); it++) {
+					pthread_mutex_lock(&index_mutex);
+					triplet t = triplet(node_map[x], node_map[y], it->second);
+					pthread_t pt;
+					int rc = pthread_create(&pt, NULL, remove_edge, (void*)&t);
+					child_threads.push_back(pt);
+					for (int i=0;i<child_threads.size();i++) {
+						void* status;
+						int st = pthread_join(child_threads[i], &status);
+					}	
+				}
+			}
 			unlock_write ();
 		} else if (command == 'F') {
 			break;
